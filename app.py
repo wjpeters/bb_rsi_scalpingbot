@@ -83,15 +83,51 @@ def log_bot_run(mode: str):
         "run_info": {
             "mode": mode,
             "timestamp": datetime.now().isoformat(),
+        },
+        "trading_params": {
             "symbol": config.SYMBOL,
             "timeframe": config.TIMEFRAME,
             "position_size": config.POSITION_SIZE,
+            "profit_target": config.PROFIT_TARGET,
+        },
+        "compounding": {
+            "enabled": config.ENABLE_COMPOUNDING,
+            "initial_capital": config.INITIAL_CAPITAL,
+            "interval": config.COMPOUND_INTERVAL,
+            "max_position_size": config.MAX_POSITION_SIZE,
+            "compound_rate": config.COMPOUND_RATE,
+        },
+        "strategy_params": {
+            "rsi_period": config.RSI_PERIOD,
+            "rsi_overbought": config.RSI_OVERBOUGHT,
+            "rsi_oversold": config.RSI_OVERSOLD,
+            "bb_period": config.BB_PERIOD,
+            "bb_std": config.BB_STD,
+            "volume_threshold": config.VOLUME_THRESHOLD,
+            "stop_loss_pct": config.STOP_LOSS_PCT,
+            "max_positions": config.MAX_POSITIONS,
+        },
+        "risk_params": {
+            "take_profit_pct": config.TAKE_PROFIT_PCT,
+            "max_daily_trades": config.MAX_DAILY_TRADES,
+            "max_daily_loss_pct": config.MAX_DAILY_LOSS_PCT,
+            "cooldown_minutes": config.COOLDOWN_MINUTES,
+        },
+        "system": {
+            "testnet": config.TESTNET,
+            "data_provider": config.DATA_PROVIDER,
+            "log_level": config.LOG_LEVEL,
+            "update_interval": config.UPDATE_INTERVAL,
+            "api_key_provided": bool(config.BYBIT_API_KEY),
         }
     }
     
-    # Save to JSON file
+    # Save to JSON file with nice formatting
     with open(log_file, 'w') as f:
-        json.dump(config_params, f, indent=4)
+        json.dump(config_params, f, indent=4, sort_keys=True)
+    
+    # Log basic info to console
+    logger.info(f"Configuration saved to {log_file}")
 
 class TradingBot:
     def __init__(self):
@@ -186,6 +222,8 @@ class TradingBot:
 
     def run_backtest(self, days: int = 30):
         """Run backtest simulation"""
+        # Create timestamp for logs
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_bot_run('backtest')
         
         try:
@@ -233,13 +271,15 @@ class TradingBot:
                         current_data, self.strategy.current_position
                     )
                     if should_exit:
-                        self.strategy.update_position(True, price, reason)
-                        trades.append({
+                        exit_pnl = self.strategy.update_position(True, price, reason)
+                        trades[-1].update({
                             'exit_time': current_time,
                             'exit_price': price,
-                            'pnl': self.strategy.daily_pnl
+                            'pnl': exit_pnl,
+                            'exit_reason': reason,
+                            'type': trades[-1]['type']  # Ensure type is preserved
                         })
-                        logger.info(f"EXIT [{current_time}] - {reason} | Price: ${price:.2f} | PnL: ${self.strategy.daily_pnl:.2f}")
+                        logger.info(f"EXIT [{current_time}] - {reason} | Price: ${price:.2f} | PnL: ${exit_pnl:.2f}")
                 
                 # Check for entry if not in position
                 elif self.strategy.can_open_position():
@@ -254,7 +294,11 @@ class TradingBot:
                         trades.append({
                             'entry_time': current_time,
                             'entry_price': price,
-                            'type': signal_type
+                            'type': signal_type.lower(),  # Ensure type is lowercase for consistency
+                            'exit_time': None,
+                            'exit_price': None,
+                            'pnl': None,
+                            'exit_reason': None
                         })
                         logger.info(f"ENTRY [{current_time}] - {signal_type} | Price: ${price:.2f}")
             
@@ -288,10 +332,13 @@ class TradingBot:
             
             console.print(results)
             
-            # Create visualization
+            # Create visualization and save in logs folder
             console.print("\nCreating visualization...")
-            self.visualizer.plot_backtest_results(df, trades)
-            console.print("[bold green]Backtest completed! Results saved to backtest_results.png[/bold green]")
+            log_dir = Path("logs")
+            log_dir.mkdir(exist_ok=True)
+            visualization_file = log_dir / f"backtest_{timestamp}.png"
+            self.visualizer.plot_backtest_results(df, trades, visualization_file)
+            console.print(f"[bold green]Backtest completed! Results saved to {visualization_file}[/bold green]")
             
         except Exception as e:
             logger.error(f"Backtest error: {str(e)}", exc_info=True)
@@ -376,6 +423,18 @@ def live():
     except KeyboardInterrupt:
         bot.stop()
         console.print("[bold red]Bot stopped by user[/bold red]")
+
+@cli.command()
+def clear_logs():
+    """Clear all log files from the logs directory"""
+    log_dir = Path("logs")
+    if log_dir.exists():
+        for file in log_dir.glob("*"):
+            file.unlink()
+        log_dir.rmdir()
+        console.print("[bold green]Logs directory cleared successfully[/bold green]")
+    else:
+        console.print("[bold yellow]Logs directory does not exist[/bold yellow]")
 
 if __name__ == '__main__':
     cli() 

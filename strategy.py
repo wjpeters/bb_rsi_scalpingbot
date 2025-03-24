@@ -310,24 +310,31 @@ class RSI_BB_ScalpingStrategy:
             self.logger.error(f"Error in check_exit_conditions: {str(e)}")
             return True, f"Error: {str(e)}", data['close'][-1]
 
-    def update_position(self, should_exit: bool, exit_price: float, exit_reason: str) -> None:
-        """Update position status and track performance."""
-        if should_exit and self.current_position:
+    def update_position(self, is_exit: bool, price: float, reason: str = None) -> float:
+        """Update the current position and calculate PnL if exiting"""
+        if is_exit and self.current_position:
+            # Calculate PnL
             entry_price = self.current_position['entry_price']
-            position_type = self.current_position['type']
+            position_type = self.current_position['type'].upper()
             
-            if position_type == "LONG":
-                pnl = (exit_price - entry_price) * self.position_size
-            else:  # SHORT
-                pnl = (entry_price - exit_price) * self.position_size
+            if self.current_position['type'] == 'long':
+                pnl = (price - entry_price) * self.position_size
+            else:  # short
+                pnl = (entry_price - price) * self.position_size
             
+            # Update daily and total PnL
             self.daily_pnl += pnl
             self.total_pnl += pnl
-            self.current_position = None
-            self.logger.info(f"Closed {position_type} position: {exit_reason}, PnL: ${pnl:.2f}")
             
-            # Update position size after closing position
-            self.update_position_size()
+            # Log the exit
+            logger.info(f"Closed {position_type} position: {reason}, PnL: ${pnl:.2f}")
+            
+            # Clear current position
+            self.current_position = None
+            
+            return pnl
+        
+        return 0.0
 
     def can_open_position(self) -> bool:
         """Check if we can open a new position based on risk management rules."""

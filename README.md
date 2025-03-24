@@ -93,6 +93,12 @@ Features:
 - Automatic daily profit target monitoring
 - Optional profit compounding
 
+### Clear Logs
+Clear all log files from the logs directory:
+```bash
+python app.py clear-logs
+```
+
 ## Configuration
 
 Edit `config.py` to customize:

@@ -12,6 +12,13 @@ import seaborn as sns
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List
+import io
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from io import BytesIO
 
 import config
 
@@ -481,58 +488,307 @@ class TradingVisualizer:
             logger.error(f"Error creating live chart: {str(e)}")
             raise
 
-    def plot_backtest_results(self, df: pd.DataFrame, trades: List[Dict]) -> None:
+    def create_backtest_report(self, df: pd.DataFrame, trades: List[dict], save_path: str) -> None:
         """
-        Create visualization of backtest results
+        Create a comprehensive PDF report of backtest results.
         
         Args:
-            df: DataFrame with price data and indicators
-            trades: List of trade dictionaries
+            df (pd.DataFrame): DataFrame containing price and indicator data
+            trades (List[dict]): List of trade dictionaries
+            save_path (str): Path where the PDF report will be saved
         """
         try:
-            # Create figure with subplots
-            fig = plt.figure(figsize=(15, 10))
-            gs = fig.add_gridspec(3, 1, height_ratios=[2, 1, 1])
+            # Calculate metrics
+            total_trades = len([t for t in trades if 'exit_price' in t])
+            winning_trades = len([t for t in trades if t.get('pnl', 0) > 0])
+            win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
+            total_profit = sum(t.get('pnl', 0) for t in trades)
+            avg_profit = total_profit / total_trades if total_trades > 0 else 0
             
-            # Price and Bollinger Bands plot
-            ax1 = fig.add_subplot(gs[0])
-            ax1.plot(df.index, df['close'], label='Price', color=self.colors['price'])
-            ax1.plot(df.index, df['bb_upper'], '--', label='BB Upper', color=self.colors['bb_upper'], alpha=0.5)
-            ax1.plot(df.index, df['bb_middle'], '--', label='BB Middle', color=self.colors['bb_middle'], alpha=0.5)
-            ax1.plot(df.index, df['bb_lower'], '--', label='BB Lower', color=self.colors['bb_lower'], alpha=0.5)
-            
-            # Plot entry and exit points
+            # Calculate max drawdown
+            cumulative_pnl = [0]
             for trade in trades:
-                if 'entry_time' in trade:
-                    ax1.scatter(trade['entry_time'], trade['entry_price'], 
-                              marker='^', color=self.colors['buy'], s=100)
-                if 'exit_time' in trade:
-                    ax1.scatter(trade['exit_time'], trade['exit_price'], 
-                              marker='v', color=self.colors['sell'], s=100)
+                if 'pnl' in trade:
+                    cumulative_pnl.append(cumulative_pnl[-1] + trade['pnl'])
+            running_max = np.maximum.accumulate(cumulative_pnl)
+            drawdowns = [(peak - trough) / peak * 100 if peak > 0 else 0 
+                        for peak, trough in zip(running_max, cumulative_pnl)]
+            max_drawdown = min(drawdowns) if drawdowns else 0
             
-            ax1.set_title('Price Action and Bollinger Bands')
-            ax1.grid(True, color=self.colors['grid'])
-            ax1.legend()
+            # Calculate trading days using pandas datetime index
+            trading_days = len(pd.Series(df.index).dt.date.unique())
+            avg_daily_profit = total_profit / trading_days if trading_days > 0 else 0
             
-            # Volume plot
-            ax2 = fig.add_subplot(gs[1])
-            ax2.bar(df.index, df['volume'], color=self.colors['volume'])
-            ax2.set_title('Volume')
-            ax2.grid(True, color=self.colors['grid'])
+            # Store metrics in a dictionary
+            metrics = {
+                'Total Trades': total_trades,
+                'Win Rate': f"{win_rate:.2f}%",
+                'Total Profit': f"${total_profit:.2f}",
+                'Average Profit': f"${avg_profit:.2f}",
+                'Max Drawdown': f"{max_drawdown:.2f}%",
+                'Trading Days': trading_days,
+                'Average Daily Profit': f"${avg_daily_profit:.2f}"
+            }
             
-            # RSI plot
-            ax3 = fig.add_subplot(gs[2])
-            ax3.plot(df.index, df['rsi'], color=self.colors['rsi'])
-            ax3.axhline(y=70, color='r', linestyle='--', alpha=0.5)
-            ax3.axhline(y=30, color='g', linestyle='--', alpha=0.5)
-            ax3.set_title('RSI')
-            ax3.grid(True, color=self.colors['grid'])
+            # Create visualization with buy/sell signals and save to bytes
+            img_data = BytesIO()
             
-            # Adjust layout and save
+            # Create figure with entry/exit points
+            fig = plt.figure(figsize=(10, 7), facecolor=self.background_color)
+            gs = GridSpec(3, 1, height_ratios=[3, 1, 1], hspace=0.1)
+            
+            # Price and Bollinger Bands subplot
+            ax1 = fig.add_subplot(gs[0])
+            ax1.plot(df.index, df['close'], color=APPLE_BLUE, linewidth=1.5, label='BTC Price')
+            ax1.plot(df.index, df['bb_upper'], color=APPLE_PURPLE, linewidth=0.8, alpha=0.7, label='Upper BB')
+            ax1.plot(df.index, df['bb_middle'], color=APPLE_GREY, linewidth=0.8, alpha=0.7, label='Middle BB')
+            ax1.plot(df.index, df['bb_lower'], color=APPLE_PURPLE, linewidth=0.8, alpha=0.7, label='Lower BB')
+            ax1.fill_between(df.index, df['bb_upper'], df['bb_lower'], color=APPLE_PURPLE, alpha=0.05)
+            
+            # Add entry/exit points
+            for trade in trades:
+                if 'entry_time' in trade and 'exit_time' in trade:
+                    entry_time = trade['entry_time']
+                    exit_time = trade['exit_time']
+                    entry_price = trade['entry_price']
+                    exit_price = trade['exit_price']
+                    trade_type = trade.get('type', 'unknown')
+                    
+                    # Entry points
+                    if trade_type == 'long':
+                        ax1.scatter(entry_time, entry_price, marker='^', color=APPLE_GREEN, s=100, zorder=5, label='Long Entry' if 'Long Entry' not in ax1.get_legend_handles_labels()[1] else '')
+                    else:
+                        ax1.scatter(entry_time, entry_price, marker='v', color=APPLE_RED, s=100, zorder=5, label='Short Entry' if 'Short Entry' not in ax1.get_legend_handles_labels()[1] else '')
+                    
+                    # Exit points
+                    ax1.scatter(exit_time, exit_price, marker='o', color=APPLE_GREY, s=80, zorder=5, label='Exit' if 'Exit' not in ax1.get_legend_handles_labels()[1] else '')
+            
+            # Configure price chart
+            ax1.set_title('Backtest Results', fontsize=16, color=self.text_color, pad=10, fontweight='bold')
+            ax1.set_ylabel('Price (USD)', fontsize=12, color=self.text_color)
+            ax1.grid(True, alpha=0.2)
+            ax1.legend(loc='upper left', facecolor=self.background_color, edgecolor=self.grid_color)
+            ax1.yaxis.set_major_formatter('${x:,.0f}')
+            
+            # RSI subplot
+            ax2 = fig.add_subplot(gs[1], sharex=ax1)
+            ax2.plot(df.index, df['rsi'], color=APPLE_ORANGE, linewidth=1.2, label='RSI')
+            ax2.axhline(70, color=APPLE_RED, linestyle='--', linewidth=0.8, alpha=0.5)
+            ax2.axhline(50, color=APPLE_GREY, linestyle='--', linewidth=0.8, alpha=0.5)
+            ax2.axhline(30, color=APPLE_GREEN, linestyle='--', linewidth=0.8, alpha=0.5)
+            ax2.fill_between(df.index, df['rsi'], 30, where=(df['rsi'] < 30), color=APPLE_GREEN, alpha=0.3)
+            ax2.fill_between(df.index, df['rsi'], 70, where=(df['rsi'] > 70), color=APPLE_RED, alpha=0.3)
+            ax2.set_ylabel('RSI', fontsize=12, color=self.text_color)
+            ax2.set_ylim(0, 100)
+            ax2.grid(True, alpha=0.2)
+            
+            # Balance/Equity subplot
+            ax3 = fig.add_subplot(gs[2], sharex=ax1)
+            cumulative_pnl = np.cumsum([t.get('pnl', 0) for t in trades if 'pnl' in t])
+            if len(cumulative_pnl) > 0:
+                ax3.plot(df.index[:len(cumulative_pnl)], cumulative_pnl, color=APPLE_GREEN, linewidth=1.2, label='Cumulative P&L')
+                ax3.set_ylabel('Cumulative P&L ($)', fontsize=12, color=self.text_color)
+                ax3.grid(True, alpha=0.2)
+                ax3.legend(loc='upper left', facecolor=self.background_color, edgecolor=self.grid_color)
+            
+            # Format x-axis date
+            for ax in [ax1, ax2, ax3]:
+                ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+                ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+                
+            plt.setp(ax1.get_xticklabels(), visible=False)
+            plt.setp(ax2.get_xticklabels(), visible=False)
+            plt.setp(ax3.get_xticklabels(), rotation=45, ha='right')
+            
+            # Save figure
             plt.tight_layout()
-            plt.savefig('backtest_results.png', dpi=300, bbox_inches='tight')
-            plt.close()
+            fig.savefig(img_data, format='png', dpi=300, bbox_inches='tight')
+            plt.close(fig)
+            img_data.seek(0)
+            
+            # Create PDF
+            doc = SimpleDocTemplate(
+                save_path,
+                pagesize=landscape(letter),
+                rightMargin=30,
+                leftMargin=30,
+                topMargin=30,
+                bottomMargin=30
+            )
+            
+            # Prepare content
+            story = []
+            styles = getSampleStyleSheet()
+            
+            # Add title
+            title_style = ParagraphStyle(
+                'CustomTitle',
+                parent=styles['Heading1'],
+                fontSize=24,
+                spaceAfter=30,
+                alignment=1
+            )
+            story.append(Paragraph("Backtest Results Report", title_style))
+            
+            # Add date range
+            date_range = f"Period: {df.index[0].strftime('%Y-%m-%d')} to {df.index[-1].strftime('%Y-%m-%d')}"
+            story.append(Paragraph(date_range, styles['Normal']))
+            story.append(Spacer(1, 20))
+            
+            # Add configuration parameters
+            story.append(Paragraph("Strategy Configuration", styles['Heading2']))
+            story.append(Spacer(1, 10))
+            
+            config_data = [
+                ["Parameter", "Value"],
+                ["Position Size", str(config.POSITION_SIZE)],
+                ["RSI Period", str(config.RSI_PERIOD)],
+                ["RSI Overbought", str(config.RSI_OVERBOUGHT)],
+                ["RSI Oversold", str(config.RSI_OVERSOLD)],
+                ["BB Period", str(config.BB_PERIOD)],
+                ["BB Standard Dev", str(config.BB_STD)],
+                ["Stop Loss %", f"{config.STOP_LOSS_PCT:.1f}%"],
+                ["Take Profit %", f"{config.TAKE_PROFIT_PCT:.1f}%"],
+                ["Max Daily Trades", str(config.MAX_DAILY_TRADES)],
+                ["Max Daily Loss %", f"{config.MAX_DAILY_LOSS_PCT:.1f}%"],
+                ["Cooldown Minutes", str(config.COOLDOWN_MINUTES)]
+            ]
+            
+            config_table = Table(config_data, colWidths=[200, 200])
+            config_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 14),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 12),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            story.append(config_table)
+            story.append(Spacer(1, 20))
+            
+            # Add performance summary
+            story.append(Paragraph("Performance Summary", styles['Heading2']))
+            story.append(Spacer(1, 10))
+            
+            # Create metrics table
+            data = [[Paragraph("Metric", styles['Heading3']), Paragraph("Value", styles['Heading3'])]]
+            for metric, value in metrics.items():
+                data.append([metric, str(value)])
+            
+            table = Table(data, colWidths=[200, 200])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 14),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 12),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            story.append(table)
+            story.append(Spacer(1, 20))
+            
+            # Add trade details section
+            story.append(Paragraph("Trade Details", styles['Heading2']))
+            story.append(Spacer(1, 10))
+            
+            # Create trade details table with more information
+            trade_data = [["Date", "Type", "Entry Price", "Exit Price", "PnL", "Duration", "Exit Reason"]]
+            
+            for trade in trades:
+                if 'entry_time' in trade and 'entry_price' in trade:
+                    entry_time = trade['entry_time'].strftime('%Y-%m-%d %H:%M') if isinstance(trade['entry_time'], (datetime, pd.Timestamp)) else 'Unknown'
+                    trade_type = trade.get('type', 'Unknown').upper()
+                    entry_price = f"${trade.get('entry_price', 0):.2f}"
+                    exit_price = f"${trade.get('exit_price', 0):.2f}" if 'exit_price' in trade else 'N/A'
+                    pnl = f"${trade.get('pnl', 0):.2f}" if 'pnl' in trade else 'N/A'
+                    
+                    # Calculate duration if we have both entry and exit times
+                    duration = 'N/A'
+                    if 'exit_time' in trade and isinstance(trade['exit_time'], (datetime, pd.Timestamp)):
+                        duration_mins = int((trade['exit_time'] - trade['entry_time']).total_seconds() / 60)
+                        duration = f"{duration_mins} min"
+                    
+                    exit_reason = trade.get('exit_reason', 'Unknown')
+                    
+                    trade_data.append([
+                        entry_time,
+                        trade_type,
+                        entry_price,
+                        exit_price,
+                        pnl,
+                        duration,
+                        exit_reason
+                    ])
+            
+            trade_table = Table(trade_data, colWidths=[100, 60, 80, 80, 70, 60, 100])
+            trade_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 12),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
+                ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+                ('FONTSIZE', (0, 1), (-1, -1), 10),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ]))
+            story.append(trade_table)
+            story.append(Spacer(1, 20))
+            
+            # Add chart
+            # Scale image to fit page width while maintaining aspect ratio
+            img = Image(img_data)
+            aspect = img.imageHeight / float(img.imageWidth)
+            available_width = doc.width * 0.9
+            img.drawWidth = available_width
+            img.drawHeight = available_width * aspect
+            story.append(img)
+            
+            # Build PDF
+            doc.build(story)
+            logger.info(f"PDF report saved to {save_path}")
             
         except Exception as e:
-            logger.error(f"Error creating visualization: {str(e)}")
+            logger.error(f"Error creating PDF report: {str(e)}")
+            raise
+
+    def plot_backtest_results(self, df: pd.DataFrame, trades: List[Dict], save_path: str = 'backtest_results.pdf') -> None:
+        """
+        Create a PDF report of backtest results
+        
+        Args:
+            df: DataFrame with price and indicator data
+            trades: List of trade dictionaries
+            save_path: Path to save the report (should end with .pdf)
+        """
+        try:
+            # Convert Path to string if needed
+            save_path = str(save_path)
+            
+            # Ensure save_path ends with .pdf
+            if not save_path.endswith('.pdf'):
+                save_path = save_path.replace('.png', '.pdf')
+                if not save_path.endswith('.pdf'):
+                    save_path += '.pdf'
+            
+            # Create the PDF report directly
+            self.create_backtest_report(df, trades, save_path)
+            
+        except Exception as e:
+            logger.error(f"Error creating backtest report: {str(e)}")
             raise 
