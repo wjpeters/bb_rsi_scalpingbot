@@ -500,15 +500,15 @@ class TradingVisualizer:
         try:
             # Calculate metrics
             total_trades = len([t for t in trades if 'exit_price' in t])
-            winning_trades = len([t for t in trades if t.get('pnl', 0) > 0])
+            winning_trades = len([t for t in trades if t.get('pnl') is not None and t.get('pnl', 0) > 0])
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-            total_profit = sum(t.get('pnl', 0) for t in trades)
+            total_profit = sum(t.get('pnl', 0) for t in trades if t.get('pnl') is not None)
             avg_profit = total_profit / total_trades if total_trades > 0 else 0
             
             # Calculate max drawdown
             cumulative_pnl = [0]
             for trade in trades:
-                if 'pnl' in trade:
+                if 'pnl' in trade and trade['pnl'] is not None:
                     cumulative_pnl.append(cumulative_pnl[-1] + trade['pnl'])
             running_max = np.maximum.accumulate(cumulative_pnl)
             drawdowns = [(peak - trough) / peak * 100 if peak > 0 else 0 
@@ -535,7 +535,7 @@ class TradingVisualizer:
             
             # Create figure with entry/exit points
             fig = plt.figure(figsize=(10, 7), facecolor=self.background_color)
-            gs = GridSpec(3, 1, height_ratios=[3, 1, 1], hspace=0.1)
+            gs = GridSpec(2, 1, height_ratios=[3, 1], hspace=0.1)
             
             # Price and Bollinger Bands subplot
             ax1 = fig.add_subplot(gs[0])
@@ -582,23 +582,13 @@ class TradingVisualizer:
             ax2.set_ylim(0, 100)
             ax2.grid(True, alpha=0.2)
             
-            # Balance/Equity subplot
-            ax3 = fig.add_subplot(gs[2], sharex=ax1)
-            cumulative_pnl = np.cumsum([t.get('pnl', 0) for t in trades if 'pnl' in t])
-            if len(cumulative_pnl) > 0:
-                ax3.plot(df.index[:len(cumulative_pnl)], cumulative_pnl, color=APPLE_GREEN, linewidth=1.2, label='Cumulative P&L')
-                ax3.set_ylabel('Cumulative P&L ($)', fontsize=12, color=self.text_color)
-                ax3.grid(True, alpha=0.2)
-                ax3.legend(loc='upper left', facecolor=self.background_color, edgecolor=self.grid_color)
-            
             # Format x-axis date
-            for ax in [ax1, ax2, ax3]:
+            for ax in [ax1, ax2]:
                 ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
                 ax.xaxis.set_major_locator(mdates.AutoDateLocator())
                 
             plt.setp(ax1.get_xticklabels(), visible=False)
-            plt.setp(ax2.get_xticklabels(), visible=False)
-            plt.setp(ax3.get_xticklabels(), rotation=45, ha='right')
+            plt.setp(ax2.get_xticklabels(), rotation=45, ha='right')
             
             # Save figure
             plt.tight_layout()
@@ -711,8 +701,8 @@ class TradingVisualizer:
                     entry_time = trade['entry_time'].strftime('%Y-%m-%d %H:%M') if isinstance(trade['entry_time'], (datetime, pd.Timestamp)) else 'Unknown'
                     trade_type = trade.get('type', 'Unknown').upper()
                     entry_price = f"${trade.get('entry_price', 0):.2f}"
-                    exit_price = f"${trade.get('exit_price', 0):.2f}" if 'exit_price' in trade else 'N/A'
-                    pnl = f"${trade.get('pnl', 0):.2f}" if 'pnl' in trade else 'N/A'
+                    exit_price = f"${trade['exit_price']:.2f}" if trade.get('exit_price') is not None else 'N/A'
+                    pnl = f"${trade['pnl']:.2f}" if trade.get('pnl') is not None else 'N/A'
                     
                     # Calculate duration if we have both entry and exit times
                     duration = 'N/A'

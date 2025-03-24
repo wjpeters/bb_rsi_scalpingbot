@@ -304,10 +304,10 @@ class TradingBot:
             
             # Calculate and log final results
             total_trades = len([t for t in trades if 'exit_price' in t])
-            winning_trades = len([t for t in trades if 'pnl' in t and t['pnl'] > 0])
+            winning_trades = len([t for t in trades if 'pnl' in t and t['pnl'] is not None and t['pnl'] > 0])
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
-            total_profit = sum([t['pnl'] for t in trades if 'pnl' in t])
-            max_drawdown = min([0] + [t['pnl'] for t in trades if 'pnl' in t])
+            total_profit = sum([t['pnl'] for t in trades if 'pnl' in t and t['pnl'] is not None])
+            max_drawdown = min([0] + [t['pnl'] for t in trades if 'pnl' in t and t['pnl'] is not None])
             avg_daily_profit = total_profit / days if days > 0 else 0
             trading_days = len([pnl for pnl in daily_pnl if pnl != 0])
             daily_win_rate = (trading_days / days * 100) if days > 0 else 0
