@@ -6,13 +6,15 @@ A sophisticated Bitcoin trading bot that implements a scalping strategy using RS
 
 - 📈 RSI + Bollinger Bands strategy implementation
 - 🔄 Real-time trading on Bybit exchange
-- 📊 Beautiful Apple-inspired visualization
+- 📊 Beautiful visualization with system fonts
 - 📱 Modern command-line interface with live updates
 - 📈 Comprehensive backtesting capabilities
 - 🎯 Daily profit target monitoring
+- 💰 Optional profit compounding (daily/weekly/monthly)
 - 📊 Detailed performance metrics and analytics
 - 🔒 Support for testnet trading
 - 🎨 Professional-grade charts and dashboards
+- 📝 Comprehensive run logging and configuration tracking
 
 ## Strategy Overview
 
@@ -25,7 +27,14 @@ The bot implements a long-only strategy with the following rules:
 ### Exit Conditions (Sell)
 - Price reaches or exceeds the middle Bollinger Band, OR
 - RSI crosses above 50, OR
-- Price drops 1% below entry price (stop loss)
+- Price drops below stop loss (configurable)
+
+### Compounding Options
+- Enable/disable profit compounding
+- Choose compounding interval (daily/weekly/monthly)
+- Set compound rate (percentage of profits to reinvest)
+- Maximum position size limit for safety
+- Automatic position size adjustment based on account growth
 
 ## Installation
 
@@ -82,35 +91,73 @@ Features:
 - Beautiful dashboard interface
 - Performance tracking
 - Automatic daily profit target monitoring
+- Optional profit compounding
 
 ## Configuration
 
 Edit `config.py` to customize:
-- Trading parameters
-- Position size
+
+### Trading Parameters
+- Trading pair and timeframe
+- Position size and leverage
 - Risk management settings
 - API credentials
 - Indicator parameters
 - Daily profit target
 
+### Compounding Settings
+```python
+# Compounding settings
+ENABLE_COMPOUNDING = False  # Set to True to enable
+INITIAL_CAPITAL = 1000     # Starting capital in USD
+COMPOUND_INTERVAL = "DAILY" # DAILY, WEEKLY, or MONTHLY
+MAX_POSITION_SIZE = 0.02   # Maximum position size in BTC
+COMPOUND_RATE = 0.5        # 50% of profits reinvested
+```
+
 ## Safety Features
 
-- Small default position size (0.001 BTC)
-- 1% stop loss per trade
+- Small default position size (0.005 BTC)
+- Configurable stop loss
 - Daily profit target monitoring
+- Maximum position size limit
 - Support for testnet trading
 - Comprehensive error handling
 - Rate limit management
+- Conservative compounding approach
 
 ## Visualization
 
 The bot includes professional-grade visualization tools:
-- Live trading dashboard
+- Live trading dashboard with compounding metrics
 - Backtest results charts
 - Performance metrics
 - Trade analysis
 - Profit distribution
 - Win rate analysis by day
+- System font compatibility for better portability
+
+## Logging and Analytics
+
+The bot maintains detailed logs of all runs and configurations:
+
+### Run Logs
+- Each bot run (live or backtest) is logged with timestamp
+- Complete configuration snapshot for each run
+- Stored in JSON format for easy analysis
+- Located in the `logs` directory
+
+### Configuration Tracking
+Logs include:
+- Trading parameters (symbol, timeframe, position size)
+- Compounding settings
+- Strategy parameters (RSI, Bollinger Bands)
+- Risk management settings
+- System configuration
+
+### Log Files
+- `logs/bot_YYYYMMDD_HHMMSS.log`: Detailed operation logs
+- `logs/bot_run_YYYYMMDD_HHMMSS.json`: Configuration snapshots
 
 ## Disclaimer
 
@@ -120,6 +167,7 @@ This trading bot is for educational purposes only. Cryptocurrency trading carrie
 - Never trade with money you can't afford to lose
 - Monitor the bot's operation
 - Understand the strategy and risks involved
+- Use compounding features cautiously
 
 ## License
 

@@ -7,6 +7,8 @@ import time
 from datetime import datetime, timedelta
 import threading
 from typing import Dict, Optional
+import json
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -22,14 +24,74 @@ from bybit_client import BybitClient
 from visualizer import TradingVisualizer
 
 # Configure logging
-logging.basicConfig(
-    level=getattr(logging, config.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('app')
+def setup_logging():
+    """Configure logging settings"""
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    
+    # Create a timestamp for the log file
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = log_dir / f"trades_{timestamp}.log"
+    
+    # Create formatters and handlers
+    file_formatter = logging.Formatter('%(asctime)s - %(message)s')
+    console_formatter = logging.Formatter('%(message)s')
+    
+    # File handler
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(file_formatter)
+    
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(console_formatter)
+    
+    # Configure root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(file_handler)
+    root_logger.addHandler(console_handler)
+    
+    # Create and configure our logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    
+    return logger
 
-# Initialize Rich console
+# Initialize logging
+logger = setup_logging()
 console = Console()
+
+def log_bot_run(mode: str):
+    """
+    Log bot run with configuration parameters
+    
+    Args:
+        mode: Either 'backtest' or 'live'
+    """
+    # Create logs directory if it doesn't exist
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
+    
+    # Create a log file with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_file = log_dir / f"config_{timestamp}.json"
+    
+    # Collect configuration parameters
+    config_params = {
+        "run_info": {
+            "mode": mode,
+            "timestamp": datetime.now().isoformat(),
+            "symbol": config.SYMBOL,
+            "timeframe": config.TIMEFRAME,
+            "position_size": config.POSITION_SIZE,
+        }
+    }
+    
+    # Save to JSON file
+    with open(log_file, 'w') as f:
+        json.dump(config_params, f, indent=4)
 
 class TradingBot:
     def __init__(self):
@@ -64,7 +126,14 @@ class TradingBot:
         table.add_row("Status", "🟢 Running" if self.running else "🔴 Stopped")
         table.add_row("Current Price", f"${current_price:,.2f}")
         table.add_row("Daily Profit", f"${self.strategy.daily_pnl:,.2f}")
+        table.add_row("Total Profit", f"${self.strategy.total_pnl:,.2f}")
         table.add_row("Trades Today", str(self.strategy.trades_today))
+        table.add_row("Position Size", f"{self.strategy.position_size:.6f} BTC")
+        
+        if config.ENABLE_COMPOUNDING:
+            table.add_row("Account Value", f"${self.strategy.account_value:,.2f}")
+            table.add_row("Compound Interval", config.COMPOUND_INTERVAL)
+            table.add_row("Next Compound", self.strategy.last_compound_date.strftime("%Y-%m-%d"))
         
         return table
 
@@ -117,6 +186,8 @@ class TradingBot:
 
     def run_backtest(self, days: int = 30):
         """Run backtest simulation"""
+        log_bot_run('backtest')
+        
         try:
             console.print("[bold green]Starting backtest...[/bold green]")
             
@@ -150,6 +221,8 @@ class TradingBot:
                 
                 # Reset daily stats at start of new day
                 if current_day != current_time.date():
+                    if current_day is not None:
+                        logger.info(f"Daily Summary [{current_day}] - PnL: ${self.strategy.daily_pnl:.2f} | Trades: {self.strategy.trades_today}")
                     current_day = current_time.date()
                     self.strategy.reset_daily_stats()
                     daily_pnl.append(self.strategy.daily_pnl)
@@ -166,6 +239,7 @@ class TradingBot:
                             'exit_price': price,
                             'pnl': self.strategy.daily_pnl
                         })
+                        logger.info(f"EXIT [{current_time}] - {reason} | Price: ${price:.2f} | PnL: ${self.strategy.daily_pnl:.2f}")
                 
                 # Check for entry if not in position
                 elif self.strategy.can_open_position():
@@ -182,8 +256,9 @@ class TradingBot:
                             'entry_price': price,
                             'type': signal_type
                         })
+                        logger.info(f"ENTRY [{current_time}] - {signal_type} | Price: ${price:.2f}")
             
-            # Calculate backtest metrics
+            # Calculate and log final results
             total_trades = len([t for t in trades if 'exit_price' in t])
             winning_trades = len([t for t in trades if 'pnl' in t and t['pnl'] > 0])
             win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
@@ -193,7 +268,12 @@ class TradingBot:
             trading_days = len([pnl for pnl in daily_pnl if pnl != 0])
             daily_win_rate = (trading_days / days * 100) if days > 0 else 0
             
-            # Print results
+            logger.info("\nFinal Results:")
+            logger.info(f"Total Trades: {total_trades} | Win Rate: {win_rate:.2f}%")
+            logger.info(f"Total Profit: ${total_profit:.2f} | Avg Daily: ${avg_daily_profit:.2f}")
+            logger.info(f"Max Drawdown: {max_drawdown:.2f}% | Daily Win Rate: {daily_win_rate:.2f}%")
+            
+            # Print results table and create visualization
             console.print("\n[bold cyan]Backtest Results[/bold cyan]")
             results = Table(show_header=True, header_style="bold magenta")
             results.add_column("Metric", style="cyan")
@@ -214,11 +294,12 @@ class TradingBot:
             console.print("[bold green]Backtest completed! Results saved to backtest_results.png[/bold green]")
             
         except Exception as e:
-            logger.error(f"Backtest error: {str(e)}")
+            logger.error(f"Backtest error: {str(e)}", exc_info=True)
             console.print(f"[bold red]Error during backtest: {str(e)}[/bold red]")
 
     def run_live(self):
         """Run live trading"""
+        log_bot_run('live')
         self.running = True
         
         with Live(self.layout, refresh_per_second=1) as live:

@@ -8,6 +8,13 @@ TIMEFRAME = "5m"
 POSITION_SIZE = 0.005  # BTC amount to trade (5x)
 PROFIT_TARGET = 20     # Daily profit target in USD
 
+# Compounding settings
+ENABLE_COMPOUNDING = False  # Whether to enable position size compounding
+INITIAL_CAPITAL = 1000     # Initial capital in USD for compounding calculations
+COMPOUND_INTERVAL = "DAILY" # When to compound: DAILY, WEEKLY, or MONTHLY
+MAX_POSITION_SIZE = 0.02   # Maximum position size in BTC (for safety)
+COMPOUND_RATE = 0.5        # Percentage of profits to compound (0.5 = 50%)
+
 # Strategy parameters
 RSI_PERIOD = 14
 RSI_OVERBOUGHT = 58  # Even more aggressive overbought level

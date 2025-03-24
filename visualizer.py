@@ -33,63 +33,35 @@ class TradingVisualizer:
     Class for creating beautiful trading visualizations with Apple-inspired design
     """
     
-    def __init__(self, theme: str = 'dark'):
+    def __init__(self, dark_mode=True):
         """Initialize the visualizer with specified theme"""
-        self.theme = theme
-        self._setup_style()
-        logger.info(f"Initialized TradingVisualizer with theme: {theme}")
-    
-    def _setup_style(self):
-        """Configure the plot style based on theme"""
-        if self.theme == 'dark':
-            plt.style.use('dark_background')
-            self.background_color = APPLE_BACKGROUND
-            self.text_color = APPLE_FOREGROUND
-            self.grid_color = '#333333'
-            self.colors = {
-                'background': '#1e1e1e',
-                'text': '#ffffff',
-                'grid': '#333333',
-                'price': '#00ff00',
-                'volume': '#555555',
-                'bb_upper': '#ff9900',
-                'bb_middle': '#888888',
-                'bb_lower': '#ff9900',
-                'rsi': '#00ffff',
-                'buy': '#00ff00',
-                'sell': '#ff0000'
-            }
-        else:
-            plt.style.use('default')
-            self.background_color = '#FFFFFF'
-            self.text_color = '#000000'
-            self.grid_color = '#EEEEEE'
-            self.colors = {
-                'background': '#ffffff',
-                'text': '#000000',
-                'grid': '#cccccc',
-                'price': '#2ecc71',
-                'volume': '#bdc3c7',
-                'bb_upper': '#e67e22',
-                'bb_middle': '#7f8c8d',
-                'bb_lower': '#e67e22',
-                'rsi': '#3498db',
-                'buy': '#2ecc71',
-                'sell': '#e74c3c'
-            }
-            
-        # Set seaborn style
-        sns.set_style("darkgrid", {
-            'axes.facecolor': self.background_color,
-            'figure.facecolor': self.background_color,
-            'text.color': self.text_color,
-            'axes.labelcolor': self.text_color,
-            'xtick.color': self.text_color,
-            'ytick.color': self.text_color,
-            'grid.color': self.grid_color,
-            'font.family': 'SF Pro Display, Arial, sans-serif'
-        })
+        self.dark_mode = dark_mode
         
+        # Set style
+        plt.style.use('dark_background' if dark_mode else 'default')
+        
+        # Theme colors
+        self.background_color = '#1C1C1E' if dark_mode else '#FFFFFF'
+        self.text_color = '#FFFFFF' if dark_mode else '#000000'
+        self.grid_color = '#2C2C2E' if dark_mode else '#E5E5E5'
+        
+        # Use system fonts instead of SF Pro Display
+        plt.rcParams['font.family'] = ['DejaVu Sans', 'Arial', 'Helvetica', 'sans-serif']
+        
+        self.colors = {
+            'price': '#007AFF',      # Blue
+            'volume': '#8E8E93',     # Gray
+            'rsi': '#FF9500',        # Orange
+            'bb_upper': '#AF52DE',   # Purple
+            'bb_middle': '#8E8E93',  # Gray
+            'bb_lower': '#AF52DE',   # Purple
+            'buy': '#34C759',        # Green
+            'sell': '#FF3B30',       # Red
+            'grid': '#48484A'        # Dark gray
+        }
+        
+        logger.info(f"Initialized TradingVisualizer with theme: {'dark' if dark_mode else 'light'}")
+    
     def create_backtest_chart(self, df, trades=None, title='Bitcoin RSI + Bollinger Bands Scalping Strategy', 
                              save_path=None, show_trades=True, figsize=(14, 10)):
         """

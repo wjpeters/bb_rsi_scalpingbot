@@ -37,6 +37,9 @@ env/
 # Logs and databases
 *.log
 *.sqlite
+logs/
+backtest_results.png
 
-# Generated files
-backtest_results.png 
+# OS
+.DS_Store
+Thumbs.db 

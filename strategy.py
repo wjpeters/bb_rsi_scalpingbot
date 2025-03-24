@@ -27,12 +27,16 @@ class RSI_BB_ScalpingStrategy:
     
     def __init__(self, position_size: float = config.POSITION_SIZE):
         """Initialize the strategy with given parameters"""
+        self.base_position_size = position_size
         self.position_size = position_size
         self.logger = logging.getLogger('strategy')
         self.logger.info(f"Initialized RSI_BB_ScalpingStrategy with position size: {position_size} BTC")
         self.current_position: Optional[Dict] = None
         self.trades_today = 0
         self.daily_pnl = 0.0
+        self.total_pnl = 0.0
+        self.last_compound_date = datetime.now().date()
+        self.account_value = config.INITIAL_CAPITAL
         
     def reset(self):
         """Reset the strategy state"""
@@ -40,6 +44,45 @@ class RSI_BB_ScalpingStrategy:
         self.trades_today = 0
         self.daily_pnl = 0.0
         
+    def update_position_size(self):
+        """Update position size based on compounding settings"""
+        if not config.ENABLE_COMPOUNDING:
+            return
+            
+        current_date = datetime.now().date()
+        should_compound = False
+        
+        if config.COMPOUND_INTERVAL == "DAILY":
+            should_compound = current_date > self.last_compound_date
+        elif config.COMPOUND_INTERVAL == "WEEKLY":
+            should_compound = (current_date - self.last_compound_date).days >= 7
+        elif config.COMPOUND_INTERVAL == "MONTHLY":
+            should_compound = (current_date - self.last_compound_date).days >= 30
+            
+        if should_compound:
+            # Update account value with profits
+            self.account_value += self.total_pnl * config.COMPOUND_RATE
+            
+            # Calculate new position size based on account value
+            # Use a conservative 2x leverage for position sizing
+            new_position_size = (self.account_value * 2) / (self.get_current_price() * 100)
+            
+            # Limit position size
+            self.position_size = min(new_position_size, config.MAX_POSITION_SIZE)
+            
+            # Reset counters
+            self.total_pnl = 0.0
+            self.last_compound_date = current_date
+            
+            self.logger.info(f"Updated position size to {self.position_size:.6f} BTC")
+            
+    def get_current_price(self) -> float:
+        """Get current BTC price from the last known data"""
+        try:
+            return self.current_data['close'][-1]
+        except:
+            return 30000  # Fallback price for safety
+            
     def generate_signals(self, df):
         """
         Generate trading signals based on strategy rules
@@ -279,8 +322,12 @@ class RSI_BB_ScalpingStrategy:
                 pnl = (entry_price - exit_price) * self.position_size
             
             self.daily_pnl += pnl
+            self.total_pnl += pnl
             self.current_position = None
             self.logger.info(f"Closed {position_type} position: {exit_reason}, PnL: ${pnl:.2f}")
+            
+            # Update position size after closing position
+            self.update_position_size()
 
     def can_open_position(self) -> bool:
         """Check if we can open a new position based on risk management rules."""
